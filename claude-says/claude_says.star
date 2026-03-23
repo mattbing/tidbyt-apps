@@ -64,25 +64,26 @@ def main(config):
         delay = 75,
         child = render.Box(
             padding = 1,
-            child = render.Column(
-                expanded = True,
-                main_align = "space_evenly",
-                cross_align = "center",
-                children = [
-                    render.Text(
-                        content = "Claude says:",
-                        font = "tom-thumb",
-                        color = "#d97706",
-                    ),
-                    render.Marquee(
-                        width = 62,
-                        child = render.Text(
+            child = render.Marquee(
+                height = 30,
+                scroll_direction = "vertical",
+                child = render.Column(
+                    cross_align = "center",
+                    children = [
+                        render.Text(
+                            content = "Claude says:",
+                            font = "tom-thumb",
+                            color = "#d97706",
+                        ),
+                        render.Box(height = 2),
+                        render.WrappedText(
                             content = sentence,
+                            width = 62,
                             font = "tb-8",
                             color = "#c4b5fd",
                         ),
-                    ),
-                ],
+                    ],
+                ),
             ),
         ),
     )
