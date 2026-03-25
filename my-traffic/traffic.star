@@ -1,7 +1,7 @@
 """
 Applet: Traffic
 Summary: Time to your destination
-Description: Shows your estimated travel duration using traffic information from Bing/MapQuest.
+Description: Shows your estimated travel duration using traffic information from Google Maps/Bing/MapQuest.
 Author: Rob Kimball
 Honorable Mention: LukiLeu, for the inspiration with Google Traffic
 """
@@ -35,6 +35,7 @@ TRAIN_ICON = TRAIN_ICON_ASSET.readall()
 WALK_ICON = WALK_ICON_ASSET.readall()
 WHEELCHAIR_ICON = WHEELCHAIR_ICON_ASSET.readall()
 
+GOOGLE_URL = "https://maps.googleapis.com/maps/api"
 BING_URL = "http://dev.virtualearth.net/REST/v1"
 MQ_URL = "http://www.mapquestapi.com"
 ORS_URL = "https://api.openrouteservice.org"
@@ -76,6 +77,10 @@ SAMPLE_DATA = {
     },
     # These times were calculated using ORS in a traffic-less vacuum, for entertainment purposes only.
     "time_to_destination": {
+        "driving": time.parse_duration("994.7s"),
+        "transit": time.parse_duration("3120.1s"),
+        "walking": time.parse_duration("5601.3s"),
+        "bicycling": time.parse_duration("2259.8s"),
         "Driving": time.parse_duration("994.7s"),
         "Transit": time.parse_duration("3120.1s"),
         "fastest": time.parse_duration("994.7s"),
@@ -113,6 +118,13 @@ ORS_MODES = {
     "E-Bike": "cycling-electric",
     "Mountain bike": "cycling-mountain",
     # "Truck (LGV)": "driving-hgv",  # This isn't useful unless we allow people to specify the dimensions of the truck
+}
+
+GOOGLE_MODES = {
+    "Driving (Google)": "driving",
+    "Transit (Google)": "transit",
+    "Walking (Google)": "walking",
+    "Bicycling (Google)": "bicycling",
 }
 
 # "routeType" parameter
@@ -219,6 +231,129 @@ def mq_reverse_geo(coordinates, key):
             address_parts = [first["fields"].get(item, None) for item in ["address", "city", "state", "country"]]
 
     return address_parts
+
+def google_reverse_geo(coordinates, key):
+    """
+    Reverse-search a pair of GPS coordinates using Google Maps Geocoding API.
+
+    :param coordinates: tuple of lat/lon as floats
+    :param key: string, Google Maps API Key
+    :return: tuple of address parts as strings
+    """
+    coordinates = [round(float(coordinates[0]), 4), round(float(coordinates[1]), 4)]
+
+    location = ",".join((str(coordinates[0]), str(coordinates[1])))
+    cache_id = "%s/geo/%s" % (BASE_CACHE, str(coordinates))
+
+    data = cache.get(cache_id)
+
+    if data:
+        print("Returning cached address from %s" % cache_id)
+        address_parts = json.decode(data)
+    else:
+        req_url = "%s/geocode/json?latlng=%s&key=%s" % (GOOGLE_URL, location, key)
+        print("Requesting address from API: %s" % req_url)
+
+        request = http.get(req_url, ttl_seconds = CACHE_TTL["location"])
+        response = request.json()
+
+        if request.status_code != 200 or response.get("status", "") != "OK":
+            print("API Failure: %s" % response.get("status", "No error message provided"))
+            return None
+        else:
+            results = response.get("results", [])
+            if not len(results):
+                return None
+
+            first = results[0]
+            components = first.get("address_components", [])
+
+            # Build a lookup from type to short_name
+            type_map = {}
+            for comp in components:
+                for t in comp.get("types", []):
+                    type_map[t] = comp.get("short_name", "")
+
+            address_parts = [
+                type_map.get("street_number", "") + " " + type_map.get("route", ""),
+                type_map.get("locality", type_map.get("sublocality", "")),
+                type_map.get("administrative_area_level_1", ""),
+                type_map.get("country", ""),
+            ]
+            address_parts = [p.strip() for p in address_parts]
+
+    return address_parts
+
+def google_directions(origin, destination, mode, key, **kwargs):
+    """
+    Build URL and request data from the Google Maps Directions API for travel time.
+    Google Maps provides excellent traffic data for driving directions worldwide.
+
+    :param origin: tuple of coordinates (lat, lng)
+    :param destination: tuple of coordinates (lat, lng)
+    :param mode: str, Google-recognized mode ("driving", "transit", "walking", "bicycling")
+    :param key: Google Maps API key as a string
+    :param kwargs: unused, kept for interface compatibility
+    :return: tuple, the travel time with traffic and travel time without (in seconds)
+    """
+    start = ",".join((str(origin[0]), str(origin[1])))
+    end = ",".join((str(destination[0]), str(destination[1])))
+    cache_id = "%s/travel_time/%s/%s/%s/%s" % (BASE_CACHE, mode, start, end, json.encode(kwargs))
+
+    data = cache.get(cache_id)
+
+    if data:
+        print("Returning cached data from %s" % cache_id)
+        data = json.decode(data)
+    else:
+        req_url = "%s/directions/json?origin=%s&destination=%s&mode=%s&key=%s" % (
+            GOOGLE_URL,
+            start,
+            end,
+            mode,
+            key,
+        )
+        if mode == "driving":
+            req_url += "&departure_time=now"
+
+        print("Requesting directions from API: %s" % req_url)
+
+        request = http.get(req_url, ttl_seconds = CACHE_TTL["directions"])
+        response = request.json()
+
+        status = response.get("status", "UNKNOWN")
+        if request.status_code != 200 or status != "OK":
+            print("API Failure: %s" % status)
+            msg = {
+                "NOT_FOUND": "Origin or destination not found",
+                "ZERO_RESULTS": "No route found",
+                "MAX_WAYPOINTS_EXCEEDED": "Too many waypoints",
+                "INVALID_REQUEST": "Invalid request",
+                "OVER_DAILY_LIMIT": "API key over daily limit",
+                "OVER_QUERY_LIMIT": "Too many requests",
+                "REQUEST_DENIED": "Request denied, check API key",
+                "UNKNOWN_ERROR": "Google Maps server error",
+            }.get(status, status)
+            return msg, None
+        else:
+            data = response
+
+    routes = data.get("routes", [])
+    if not len(routes):
+        return "No route found", None
+
+    leg = routes[0].get("legs", [{}])[0]
+    travel_time = int(leg.get("duration", {}).get("value", 0))
+
+    # duration_in_traffic is only available for driving mode with departure_time
+    traffic_duration = leg.get("duration_in_traffic", {})
+    travel_time_with_traffic = int(traffic_duration.get("value", 0)) if traffic_duration else travel_time
+
+    if travel_time_with_traffic in (-1, 0):
+        travel_time_with_traffic = travel_time
+
+    print("Returning directions from %s to %s, estimated time %d vs. %d" % (start, end, travel_time_with_traffic, travel_time))
+    return travel_time_with_traffic, travel_time
 
 def ors_reverse_geo(coordinates, key):
     """
@@ -490,13 +625,18 @@ def duration_to_string(sec):
     return time_string
 
 def main(config):
+    google_key = config.get("google_auth", None)
     bing_key = config.get("bing_auth", None)
     ors_key = config.get("ors_auth", None)
     mq_key = config.get("mq_auth", None)
-    mode = config.get("mode", MQ_MODES["Bike"])
+    mode = config.get("mode", GOOGLE_MODES["Driving (Google)"])
 
     key = None
-    if mode in ORS_MODES.values():
+    if mode in GOOGLE_MODES.values():
+        directions = google_directions
+        key = google_key
+        service = "Google"
+    elif mode in ORS_MODES.values():
         directions = ors_directions
         key = ors_key
         service = "ORS"
@@ -512,8 +652,11 @@ def main(config):
     search_key = None
     reverse_search = lambda *_: None
 
-    # The reverse geo results from Bing/ORS are actually a little better than MapQuest, we'll take those unless we can't
-    if ors_key:
+    # Use the best available reverse geocoding service
+    if google_key:
+        reverse_search = google_reverse_geo
+        search_key = google_key
+    elif ors_key:
         reverse_search = ors_reverse_geo
         search_key = ors_key
     elif bing_key:
@@ -572,40 +715,11 @@ def main(config):
         elif type(destination_name) == "list":
             destination_name = ", ".join(destination_name)
 
-        avoid_configs = dict()
-        if service == "MapQuest":
-            avoid_configs = {
-                "avoid_bandt": ["Bridge", "Tunnel"],
-                "avoid_ferry": ["Ferry"],
-                "avoid_tolls": ["Toll Road"],
-                "avoid_unpaved": ["Unpaved"],
-                "avoid_highways": ["Limited Access"],
-            }
-        elif service == "Bing":
-            avoid_configs = {
-                "avoid_ferry": ["ferry"],
-                "avoid_tolls": ["tolls"],
-                # Minimize instead of remove since we still want the routing to succeed if we can't do without it
-                "avoid_highways": ["minimizeHighways"],
-            }
-        avoids = []
-        for cfg_key, features in avoid_configs.items():
-            if config.bool(cfg_key):
-                avoids.extend(features)
-
-        no_hills = config.bool("avoid_hills")
-        prefer_bike_lanes = config.bool("prefer_bike_lanes")
-
         raw_time, no_traffic = directions(
-            # tuples of GPS coordinates
             origin,
             destination,
-            mode,  # must correspond to a key known by the API being queried
-            key,  # API key
-            # MQ-specific settings:
-            avoids = avoids,
-            no_hills = no_hills,
-            prefer_bike_lanes = prefer_bike_lanes,
+            mode,
+            key,
         )
         print("Got", raw_time, no_traffic)
         if not no_traffic:
@@ -692,6 +806,9 @@ def get_schema():
                 desc = "",
                 icon = "car",
                 options = [
+                    schema.Option(value = v, display = k)
+                    for k, v in GOOGLE_MODES.items()
+                ] + [
                     schema.Option(value = v, display = k + " (Bing)")
                     for k, v in BING_MODES.items()
                 ] + [
@@ -701,7 +818,7 @@ def get_schema():
                     schema.Option(value = v, display = k + " (ORS)")
                     for k, v in ORS_MODES.items()
                 ],
-                default = MQ_MODES["Bike"],
+                default = GOOGLE_MODES["Driving (Google)"],
             ),
             schema.Text(
                 id = "origin_label",
@@ -729,54 +846,13 @@ def get_schema():
                 desc = "Destination adress",
                 icon = "locationCrosshairs",
             ),
-            schema.Toggle(
-                id = "avoid_highways",
-                name = "Avoid highways",
-                desc = "Limited access roads will be deprioritized",
-                icon = "road",
-                default = False,
-            ),
-            schema.Toggle(
-                id = "avoid_tolls",
-                name = "Avoid toll roads",
-                desc = "Toll roads will be deprioritized",
-                icon = "dollarSign",
-                default = False,
-            ),
-            schema.Toggle(
-                id = "avoid_bandt",
-                name = "Avoid bridges & tunnels",
-                desc = "Bridges and tunnels will be avoided if possible",
-                icon = "archway",
-                default = False,
-            ),
-            schema.Toggle(
-                id = "avoid_ferry",
-                name = "No ferries",
-                desc = "Routes will not include ferries",
-                icon = "anchor",
-                default = False,
-            ),
-            schema.Toggle(
-                id = "avoid_unpaved",
-                name = "Avoid unpaved roads",
-                desc = "Routes will avoid unpaved roads.",
-                icon = "tree",
-                default = True,
-            ),
-            schema.Toggle(
-                id = "avoid_hills",
-                name = "Avoid hilly routes",
-                desc = "Routing will prefer flat routes to hilly ones.",
-                icon = "stairs",
-                default = True,
-            ),
-            schema.Toggle(
-                id = "prefer_bike_lanes",
-                name = "Bike-friendly roads",
-                desc = "Routes will prioritize roads with bike lanes.",
-                icon = "personBiking",
-                default = True,
+            schema.Text(
+                id = "google_auth",
+                name = "Google Maps API Key",
+                desc = "Enter your API Key from console.cloud.google.com. Requires Directions API and Geocoding API enabled.",
+                icon = "userGear",
+                default = "",
+                secret = True,
             ),
             schema.Text(
                 id = "bing_auth",
@@ -806,6 +882,10 @@ def get_schema():
     )
 
 MODE_ICONS = {
+    "driving": CAR_ICON,
+    "transit": TRAIN_ICON,
+    "walking": WALK_ICON,
+    "bicycling": BIKE_ICON,
     "Driving": CAR_ICON,
     "fastest": CAR_ICON,
     "shortest": CAR_ICON,
