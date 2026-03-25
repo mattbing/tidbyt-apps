@@ -6,6 +6,7 @@ Author: Conor McLaughlin
 """
 
 load("cache.star", "cache")
+load("encoding/base64.star", "base64")
 load("encoding/json.star", "json")
 load("http.star", "http")
 load("math.star", "math")
@@ -30,7 +31,25 @@ AIRLINE_IATA = {
     "CPZ": "OH",   # PSA Airlines (American regional)
 }
 
-DEFAULT_PLANE_ICON_URL = "https://cdn-icons-png.flaticon.com/256/683/683094.png"
+# Embedded pixel art airline logos (14x15 PNG, base64-encoded)
+AIRLINE_LOGOS = {
+    "DL": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAVElEQVR4nGNgoAgYL/hPqhYmFM0kGMCE1XYiDGDCKWOMXzNujQRsx68RjwHEacRiAAsDKeBsAiOMyUKqBuI0nsXUAAO4/YhHE3YbCWhABWSkVbIBAJOdHa8tHjbuAAAAAElFTkSuQmCC",
+    "UA": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAgElEQVR4nGNgoBY4ceLOfwaNCjCGs2HiSIAJRRdUEQbQwBRHaATZsCCFwSJhDla9FglzUGxFtZEEwITXidgAVC3ZNjJiCzFCwMJChZEFzIAGCHrgnMDDhzj1RgfYZqLADYhaCkOVAWISOK4WpGBVCHamhQrcZag24nIyKV6hGQAAB9w5ans/dMQAAAAASUVORK5CYII=",
+    "AA": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAdUlEQVR4nGNgIBMwgojN0ib/SdHk+/QMIwtW02Z2bYWx/6eXeWNTw0S6IynUyAgi7tx5huLHGzduwJ0KAhoaGijOVVGRYqS/U5nQBdCdiQuAo0MvtBousKo5FkyH1S4G+2tVc+xWZHmSnLqqORbDFfQPHPoDANYzHR3U4WkzAAAAAElFTkSuQmCC",
+    "WN": "iVBORw0KGgoAAAANSUhEUgAAAA0AAAAPCAYAAAA/I0V3AAAAXElEQVR4nGNgGBBwQkDvPwgTEmNClmRAY2MTAwFGdAFCwOLDJUa4TaQAJphuBiIATB35NhFjG7I8ik0WODSiizMRUmCBxSCy/IQT4Is7uNX/9zMQjGBGR4R6kgEAknopGOPRE2IAAAAASUVORK5CYII=",
+    "B6": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAbklEQVR4nGNgIBMwYhU1XvAfhX82AUMdI14N6ADJACaiNaGpQWhEAym5bmCMCzBhsw1ZQwq6ZqhaDBux2ZKCRQynUwkBDI1zJu9iIEaMCVs8ISucg64JqpYFl1PmYLEFu1OxpA4MgKSG7CRHfwAA8cwlL7F8ylcAAAAASUVORK5CYII=",
+    "NK": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAO0lEQVR4nGNgIBMwgoj/T9T/k6RJ5iYjC7KAvNV3vBoeHuOEs5lIdeJI0siCK9QIhTRJ0THI/cgwaAAA2wQNIP2pl8sAAAAASUVORK5CYII=",
+    "F9": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAV0lEQVR4nGNgIBMwggijgJ7/pGg6t6GEkYlcG5norpEFmTOtwg2v4qyOXZTbyDSwfsxC8gMhMIT8yEB3AACo8QjIalC0agAAAABJRU5ErkJggg==",
+    "AS": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAcklEQVR4nGNgIBMwggmnrP+kaPq/bxojE7k2smATvL2kDYWvGlOFoYYJlybVmCq4BnSDMDQia7q9pA2McWnGsBGmCQaQNSMDsgOHCV0A3QZVNBfgjEdkf2Ljw+IRawIgFB3/901jxBqP2AIDHZAdOPQHABQONR+CBcPbAAAAAElFTkSuQmCC",
+    "OO": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAPUlEQVR4nGNgIBMwggijgJ7/pGg6t6GEkYlcG5norpEFmTOtwg2v4qyOXZTbyDSwfsxC8gMhMIT8yEB3AACo8QjIalC0agAAAABJRU5ErkJggg==",
+    "YX": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAUklEQVR4nGNgIBMwgggNm4r/pGi6caSDkYlcG5nwSS7oiSJd4wKoJlyaqevUBWi2LMBiK/VsXIDDTwvQxKlj4wI8wc+AJs+CLJFQsow8Gwc3AACTCBNKvlB58AAAAABJRU5ErkJggg==",
+    "9E": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAWUlEQVR4nGNgIBMwgknjBf9J0nU2gZGJXBuZkDknptqQpxGmmRgDmHBJnCCgGa8fT+CxnajAOYHFABZiNFpkH8EQYyFVA0GnWuDRBAIYNhLSgNVGYjUNDAAAvKQW6ct3qrEAAAAASUVORK5CYII=",
+    "MQ": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAM0lEQVR4nGNgIBMwgojN0ib/SdHk+/QMIxO5NjKNAI0sICJcTJc0XU/PDCU/MtFdI/0BAOZKBmVd7UT4AAAAAElFTkSuQmCC",
+    "G7": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAUElEQVR4nGNgIBMwgkmNiv8k6brRwchEro0s2ART8qJQ+HMmLcNQw0RIEy4xJkIKcMmR7UemgdU4B0vo4ZLDsBGb5jlYxLDGIz6bcdo4eAEA8O8T8IyQ3ygAAAAASUVORK5CYII=",
+    "OH": "iVBORw0KGgoAAAANSUhEUgAAAA4AAAAPCAYAAADUFP50AAAAMklEQVR4nGNgIBMwggguw8T/pGj6dn4+IxO5NjKNAI0sIGLlq8skafIdWn5kortG+gMAzY4GzQEkcosAAAAASUVORK5CYII=",
+}
+
+DEFAULT_PLANE_ICON = base64.decode("iVBORw0KGgoAAAANSUhEUgAAAA0AAAAPCAYAAAA/I0V3AAAAPElEQVR4nGNgIAMwInPu3Hn2H5dCFRUpuFomcmxioth52JyJ7CwYYCTkF3QAMmSQ+4mJHJuYBrcmBroBAMF0EBUiZK0JAAAAAElFTkSuQmCC")
 
 # Airport IATA code -> city name for display
 AIRPORT_NAMES = {
@@ -180,22 +199,15 @@ def is_commercial(callsign):
     return prefix in AIRLINE_IATA
 
 def get_airline_logo(callsign):
-    """Fetch airline logo for commercial flights, or default plane icon."""
+    """Get embedded pixel art airline logo, or default plane icon."""
     if len(callsign) >= 4:
         prefix = callsign[:3]
         iata = AIRLINE_IATA.get(prefix)
         if iata:
-            cache_key = "logo_" + iata
-            cached = cache.get(cache_key)
-            if cached != None:
-                return cached
-            logo_url = "http://pics.avs.io/200/200/" + iata + ".png"
-            resp = http.get(logo_url)
-            if resp.status_code == 200:
-                img = resp.body()
-                cache.set(cache_key, img, ttl_seconds = 86400)
-                return img
-    return http.get(DEFAULT_PLANE_ICON_URL).body()
+            logo_b64 = AIRLINE_LOGOS.get(iata)
+            if logo_b64:
+                return base64.decode(logo_b64)
+    return DEFAULT_PLANE_ICON
 
 def get_airport_name(code):
     """Map airport IATA code to city name, falling back to the raw code."""
@@ -418,7 +430,7 @@ def render_error(status_code):
             children = [
                 render.Row(
                     children = [
-                        render.Image(src = http.get("https://cdn-icons-png.flaticon.com/256/683/683094.png").body(), height = 15),
+                        render.Image(src = DEFAULT_PLANE_ICON, height = 15),
                         render.Text(content = "     ", height = 15, offset = 1, font = "6x13", color = "#fcf7c5"),
                     ],
                 ),
@@ -462,7 +474,7 @@ def render_empty():
             children = [
                 render.Row(
                     children = [
-                        render.Image(src = http.get("https://cdn-icons-png.flaticon.com/256/683/683094.png").body(), height = 15),
+                        render.Image(src = DEFAULT_PLANE_ICON, height = 15),
                         render.Text(content = "     ", height = 15, offset = 1, font = "6x13", color = "#fcf7c5"),
                     ],
                 ),
