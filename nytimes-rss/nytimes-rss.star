@@ -1,6 +1,6 @@
 """
-NYTimes RSS - Displays top headlines from the New York Times
-homepage RSS feed, scrolling vertically.
+RSS Headlines - Displays top headlines from a randomly selected RSS feed,
+scrolling vertically. Rotates between multiple news sources.
 """
 
 load("render.star", "render")
@@ -8,21 +8,33 @@ load("http.star", "http")
 load("cache.star", "cache")
 load("xpath.star", "xpath")
 load("schema.star", "schema")
+load("time.star", "time")
 
-RSS_URL = "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"
-CACHE_KEY = "nytimes_rss_headlines"
+RSS_FEEDS = [
+    {
+        "name": "NY Times",
+        "url": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+        "color": "#888888",
+    },
+    {
+        "name": "The Verge",
+        "url": "https://www.theverge.com/rss/index.xml",
+        "color": "#FA4C20",
+    },
+]
+
 CACHE_TTL = 600  # 10 minutes
 MAX_HEADLINES = 5
 
-def fetch_headlines():
-    cached = cache.get(CACHE_KEY)
+def fetch_headlines(feed):
+    cache_key = "rss_headlines_" + feed["name"]
+    cached = cache.get(cache_key)
     if cached != None:
-        headlines = cached.split("\n")
-        return headlines
+        return cached.split("\n")
 
-    resp = http.get(RSS_URL)
+    resp = http.get(feed["url"])
     if resp.status_code != 200:
-        return ["Failed to load NYT feed"]
+        return ["Failed to load " + feed["name"] + " feed"]
 
     doc = xpath.loads(resp.body())
     titles = doc.query_all("/rss/channel/item/title")
@@ -38,18 +50,22 @@ def fetch_headlines():
     if len(headlines) == 0:
         headlines = ["No headlines found"]
 
-    cache.set(CACHE_KEY, "\n".join(headlines), ttl_seconds = CACHE_TTL)
+    cache.set(cache_key, "\n".join(headlines), ttl_seconds = CACHE_TTL)
     return headlines
 
 def main(config):
-    headlines = fetch_headlines()
+    now = time.now()
+    feed_index = int(now.unix) % len(RSS_FEEDS)
+    feed = RSS_FEEDS[feed_index]
+
+    headlines = fetch_headlines(feed)
     max_count = int(config.get("max_headlines", str(MAX_HEADLINES)))
 
     children = [
         render.Text(
-            content = "NY Times",
+            content = feed["name"],
             font = "tom-thumb",
-            color = "#888888",
+            color = feed["color"],
         ),
         render.Box(height = 1),
     ]
