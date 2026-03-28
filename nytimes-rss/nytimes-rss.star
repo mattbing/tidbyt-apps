@@ -37,7 +37,11 @@ def fetch_headlines(feed):
         return ["Failed to load " + feed["name"] + " feed"]
 
     doc = xpath.loads(resp.body())
+
+    # Try RSS 2.0 format first, then Atom format
     titles = doc.query_all("/rss/channel/item/title")
+    if len(titles) == 0:
+        titles = doc.query_all("//entry/title")
 
     headlines = []
     for i in range(len(titles)):
