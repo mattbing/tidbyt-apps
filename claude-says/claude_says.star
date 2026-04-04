@@ -28,7 +28,7 @@ def get_sentence(api_key):
             "content-type": "application/json",
         },
         body = json.encode({
-            "model": "claude-haiku-4-5-20251001",
+            "model": "claude-opus-4-6",
             "max_tokens": 60,
             "messages": [
                 {
