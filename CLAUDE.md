@@ -1,6 +1,6 @@
 # Tidbyt Apps
 
-This repository is an archive of Tidbyt apps written in Starlark using the Pixlet SDK.
+This repository is an archive of Tidbyt apps written in Starlark using the Pixlet SDK. It is read and updated by the user's Tronbyt device.
 
 ## App Structure
 
@@ -53,14 +53,3 @@ pixlet serve <app-dir>/<app-name>.star    # Local preview server
 pixlet check <app-dir>/<app-name>.star    # Lint/validate
 ```
 
-## Uploading to Tronbyt
-
-Use `upload_app.sh` to upload an app to the Tronbyt server. Credentials are
-pulled automatically from 1Password (requires `op` CLI and an active session).
-
-```sh
-./upload_app.sh <app-dir>   # Upload a specific app
-./upload_app.sh             # Upload from current directory
-```
-
-The script zips the app directory and POSTs it to the Tronbyt API.
