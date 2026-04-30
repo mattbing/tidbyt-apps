@@ -10,10 +10,10 @@ load("encoding/json.star", "json")
 load("schema.star", "schema")
 
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
-CACHE_KEY = "claude_says_sentence"
+CACHE_KEY = "claude_says_sentence_v2"
 CACHE_TTL = 900  # 15 minutes between new sentences
 
-DEFAULT_PROMPT = "Write a single short witty sentence (under 60 characters) that would look fun on a tiny LED display. No quotes. Be creative, weird, poetic, or funny. Vary wildly each time."
+DEFAULT_PROMPT = "Write a single dark humor one-liner (under 60 characters) for a tiny LED display. Dry, deadpan, morbid, or bleakly funny. No inspirational bullshit. No quotes. No bees, hexagons, or electrons. Vary wildly each time."
 
 def get_sentence(api_key):
     cached = cache.get(CACHE_KEY)
