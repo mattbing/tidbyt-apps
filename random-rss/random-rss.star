@@ -63,7 +63,15 @@ def main(config):
     feed = RSS_FEEDS[feed_index]
 
     headlines = fetch_headlines(feed)
-    max_count = int(config.get("max_headlines", str(MAX_HEADLINES)))
+
+    # Pick 2 distinct random headlines from the fetched list
+    seed = int(now.unix) // CACHE_TTL
+    count = len(headlines)
+    idx1 = seed % count
+    idx2 = (seed * 7 + 3) % count
+    if idx2 == idx1:
+        idx2 = (idx2 + 1) % count
+    picks = [headlines[idx1], headlines[idx2]]
 
     children = [
         render.Text(
@@ -74,18 +82,16 @@ def main(config):
         render.Box(height = 1),
     ]
 
-    for i in range(len(headlines)):
-        if i >= max_count:
-            break
+    for i in range(len(picks)):
         children.append(
             render.WrappedText(
-                content = headlines[i],
+                content = picks[i],
                 width = 62,
-                font = "tom-thumb",
+                font = "tb-8",
                 color = "#FFFFFF",
             ),
         )
-        children.append(render.Box(height = 2))
+        children.append(render.Box(height = 3))
 
     return render.Root(
         delay = 100,
@@ -105,18 +111,5 @@ def main(config):
 def get_schema():
     return schema.Schema(
         version = "1",
-        fields = [
-            schema.Dropdown(
-                id = "max_headlines",
-                name = "Number of Headlines",
-                desc = "How many headlines to display",
-                icon = "newspaper",
-                default = "5",
-                options = [
-                    schema.Option(display = "3", value = "3"),
-                    schema.Option(display = "5", value = "5"),
-                    schema.Option(display = "7", value = "7"),
-                ],
-            ),
-        ],
+        fields = [],
     )
