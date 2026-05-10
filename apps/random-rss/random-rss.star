@@ -1,6 +1,6 @@
 """
-RSS Headlines - Displays top headlines from configurable RSS feeds,
-scrolling vertically through all headlines continuously.
+RSS Headlines - Displays two random headlines from a configurable RSS feed,
+scrolling vertically in a continuous loop.
 """
 
 load("render.star", "render")
@@ -16,7 +16,7 @@ DEFAULT_FEED_2 = "https://www.theverge.com/rss/index.xml"
 FEED_COLORS = ["#888888", "#FA4C20", "#44AAFF", "#AAFFAA"]
 
 CACHE_TTL = 600  # 10 minutes
-MAX_HEADLINES = 8
+MAX_HEADLINES = 5
 
 def fetch_headlines(url):
     cache_key = "rss_v2_" + url
@@ -63,13 +63,22 @@ def main(config):
 
     headlines = fetch_headlines(url)
 
+    # Pick 2 distinct headlines, stable within each cache window
+    seed = int(now.unix) // CACHE_TTL
+    count = len(headlines)
+    idx1 = seed % count
+    idx2 = (seed * 7 + 3) % count
+    if idx2 == idx1:
+        idx2 = (idx2 + 1) % count
+    picks = [headlines[idx1], headlines[idx2]]
+
     children = []
-    for i in range(len(headlines)):
+    for i in range(len(picks)):
         if i > 0:
-            children.append(render.Box(height = 2))
+            children.append(render.Box(height = 3))
         children.append(
             render.WrappedText(
-                content = headlines[i],
+                content = picks[i],
                 width = 62,
                 font = "tb-8",
                 color = "#FFFFFF",
@@ -77,13 +86,13 @@ def main(config):
         )
 
     return render.Root(
-        delay = 50,
+        delay = 100,
         child = render.Box(
             padding = 1,
             child = render.Marquee(
                 height = 30,
                 scroll_direction = "vertical",
-                offset_start = 30,
+                offset_start = 0,
                 offset_end = -30,
                 child = render.Column(
                     children = children,
