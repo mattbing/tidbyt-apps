@@ -92,8 +92,8 @@ def main(config):
             child = render.Marquee(
                 height = 30,
                 scroll_direction = "vertical",
-                offset_start = 0,
-                offset_end = -30,
+                offset_start = 30,
+                offset_end = 30,
                 child = render.Column(
                     children = children,
                 ),
