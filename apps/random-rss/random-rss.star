@@ -18,6 +18,12 @@ FEED_COLORS = ["#888888", "#FA4C20", "#44AAFF", "#AAFFAA"]
 CACHE_TTL = 600  # 10 minutes
 MAX_HEADLINES = 5
 
+# The Marquee scrolls 1px per frame, so total frames = content height + 30.
+# At delay = 50 that leaves ~300px of budget before pixlet's 15s animation
+# cap silently truncates the render. Cap each headline so two of them can
+# never overflow it, no matter what a feed emits.
+MAX_HEADLINE_CHARS = 140
+
 def fetch_headlines(url):
     cache_key = "rss_v2_" + url
     cached = cache.get(cache_key)
@@ -48,6 +54,11 @@ def fetch_headlines(url):
     cache.set(cache_key, "\n".join(headlines), ttl_seconds = CACHE_TTL)
     return headlines
 
+def truncate(title):
+    if len(title) <= MAX_HEADLINE_CHARS:
+        return title
+    return title[:MAX_HEADLINE_CHARS - 1] + "\u2026"
+
 def main(config):
     url1 = config.get("feed_url_1") or DEFAULT_FEED_1
     url2 = config.get("feed_url_2") or DEFAULT_FEED_2
@@ -70,7 +81,7 @@ def main(config):
     idx2 = (seed * 7 + 3) % count
     if idx2 == idx1:
         idx2 = (idx2 + 1) % count
-    picks = [headlines[idx1], headlines[idx2]]
+    picks = [truncate(headlines[idx1]), truncate(headlines[idx2])]
 
     children = []
     for i in range(len(picks)):
@@ -86,7 +97,7 @@ def main(config):
         )
 
     return render.Root(
-        delay = 100,
+        delay = 50,
         child = render.Box(
             padding = 1,
             child = render.Marquee(

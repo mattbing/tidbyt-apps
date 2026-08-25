@@ -4,10 +4,10 @@ This repository is an archive of Tidbyt apps written in Starlark using the Pixle
 
 ## App Structure
 
-Each app lives in its own directory under the repo root:
+Each app lives in its own directory under `apps/`:
 
 ```
-app-name/
+apps/app-name/
   app-name.star    # The Starlark source file
   README.md        # Description, screenshot, and usage notes
 ```
@@ -28,8 +28,8 @@ app-name/
 - The entry point is a `main()` function that returns a `render.Root` widget
 - The Tidbyt display is **64x32 pixels** with RGB color
 - Common imports: `render`, `schema`, `http`, `cache`, `encoding/json`, `time`
-- Use `pixlet render app-name.star` to render locally
-- Use `pixlet serve app-name.star` to preview in a browser
+- Use `pixlet render apps/app-name/app-name.star` to render locally
+- Use `pixlet serve apps/app-name/app-name.star` to preview in a browser
 
 ## Starlark Constraints
 
@@ -45,11 +45,45 @@ app-name/
 Common widgets: `Root`, `Box`, `Column`, `Row`, `Stack`, `Text`, `Image`,
 `Marquee`, `Animation`, `Padding`, `WrappedText`, `Circle`, `Plot`
 
-## Testing
+## Rendering and Viewing an App
 
 ```sh
-pixlet render <app-dir>/<app-name>.star   # Renders to .webp
-pixlet serve <app-dir>/<app-name>.star    # Local preview server
-pixlet check <app-dir>/<app-name>.star    # Lint/validate
+pixlet serve apps/<app>/<app>.star                    # Live-reloading browser preview
+pixlet render apps/<app>/<app>.star                   # Writes <app>.webp next to the source
+pixlet render apps/<app>/<app>.star --format gif -o /tmp/out.gif
+pixlet render apps/<app>/<app>.star -m 4              # Magnify 4x — 64x32 is tiny to eyeball
+pixlet render apps/<app>/<app>.star key=value         # Pass schema config values
+pixlet check apps/<app>/<app>.star                    # Lint (wants a manifest.yaml; only
+                                                      # needed for community submission)
 ```
+
+`pixlet serve` is the fastest loop for iterating on layout. For animation bugs the
+browser preview will lie to you about frame boundaries — render a GIF and inspect the
+actual frames instead:
+
+```sh
+ffprobe -v error -count_frames -select_streams v:0 \
+  -show_entries stream=nb_read_frames -of default=nw=1:nk=1 /tmp/out.gif   # frame count
+ffmpeg -v error -i /tmp/out.gif -f rawvideo -pix_fmt gray /tmp/out.gray    # raw pixels
+```
+
+Then walk `/tmp/out.gray` in 64*32-byte chunks to see which rows are lit per frame.
+That's how you tell a genuine loop seam from a truncated animation.
+
+## Animation Gotchas
+
+- **`pixlet render` silently truncates at `--max-duration` (default 15s).** No warning,
+  exit code 0 — the animation just stops mid-motion and loops back to frame 0, which
+  looks like a flicker/hard-reset on the device. Always check the frame count against
+  `15000 / delay`.
+- **`Marquee` scrolls exactly 1px per frame.** Its frame count is
+  `content_size + offset_start + marquee_size - offset_end` (plus 1 when the two offsets
+  differ). With `render.Root(delay = 100)` you only get 150 frames total — for a 30px-tall
+  vertical Marquee that is about 120px of scrollable content. Halve the delay or cap the
+  content to stay inside the budget.
+- **`Marquee` renders only frame 0 of its child**, so nesting an animation inside one
+  does nothing.
+- Setting `offset_start == offset_end` removes the scroll-back phase and gives a
+  blank-to-blank loop (the last frame still keeps 1px of content on screen — that's
+  inherent to the widget, not a bug worth chasing).
 
