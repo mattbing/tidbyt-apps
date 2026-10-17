@@ -24,11 +24,54 @@ MAX_HEADLINES = 5
 # never overflow it, no matter what a feed emits.
 MAX_HEADLINE_CHARS = 140
 
+# Common HTML entities used in headlines. Unknown names remain unchanged.
+HEADLINE_ENTITIES = {
+    "amp": "&", "apos": "'", "quot": '"', "lt": "<", "gt": ">",
+    "nbsp": "\u00a0", "lsquo": "\u2018", "rsquo": "\u2019",
+    "ldquo": "\u201c", "rdquo": "\u201d", "ndash": "\u2013",
+    "mdash": "\u2014", "hellip": "\u2026", "bull": "\u2022",
+    "copy": "\u00a9", "reg": "\u00ae", "trade": "\u2122",
+}
+
+def decode_headline(title):
+    # Split the original input only: &amp;#39; must not become an apostrophe.
+    pieces = title.split("&")
+    decoded = [pieces[0]]
+    for piece in pieces[1:]:
+        parts = piece.split(";", 1)
+        replacement = None
+        if len(parts) == 2:
+            entity = parts[0]
+            replacement = HEADLINE_ENTITIES.get(entity)
+            if entity.startswith("#"):
+                digits = entity[1:]
+                base = 10
+                alphabet = "0123456789"
+                if digits.startswith("x") or digits.startswith("X"):
+                    digits = digits[1:]
+                    base = 16
+                    alphabet = "0123456789abcdefABCDEF"
+                # Validate before int(): malformed feed data must not abort a render.
+                digits = digits.lstrip("0") or ("0" if digits else "")
+                valid = len(digits) > 0 and len(digits) <= 7
+                for i in range(len(digits)):
+                    if digits[i] not in alphabet:
+                        valid = False
+                if valid:
+                    codepoint = int(digits, base)
+                    if codepoint > 0 and codepoint <= 0x10ffff and not (codepoint >= 0xd800 and codepoint <= 0xdfff):
+                        replacement = chr(codepoint)
+        if replacement == None:
+            decoded.append("&" + piece)
+        else:
+            decoded.append(replacement + parts[1])
+    return "".join(decoded)
+
 def fetch_headlines(url):
-    cache_key = "rss_v2_" + url
+    cache_key = "rss_v3_" + url
     cached = cache.get(cache_key)
     if cached != None:
-        return cached.split("\n")
+        return [decode_headline(title) for title in cached.split("\n")]
 
     resp = http.get(url)
     if resp.status_code != 200:
@@ -44,15 +87,16 @@ def fetch_headlines(url):
     for i in range(len(titles)):
         if i >= MAX_HEADLINES:
             break
-        title = titles[i].replace("&amp;", "&").replace("&apos;", "'").replace("&quot;", '"')
+        title = titles[i]
         if len(title) > 0:
             headlines.append(title)
 
     if len(headlines) == 0:
         headlines = ["No headlines found"]
 
+    # Cache raw titles so decoded line breaks cannot split one headline on a hit.
     cache.set(cache_key, "\n".join(headlines), ttl_seconds = CACHE_TTL)
-    return headlines
+    return [decode_headline(title) for title in headlines]
 
 def truncate(title):
     if len(title) <= MAX_HEADLINE_CHARS:
